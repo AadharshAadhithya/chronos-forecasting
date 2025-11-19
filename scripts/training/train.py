@@ -44,6 +44,9 @@ from gluonts.transform import (
     LastValueImputation,
 )
 
+# Add src directory to path to allow importing chronos without installation
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+
 from chronos import ChronosConfig, ChronosTokenizer
 
 
