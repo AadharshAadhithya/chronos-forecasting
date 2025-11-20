@@ -730,14 +730,22 @@ class T5Stack(T5PreTrainedModel):
             )
 
         if self.config.is_decoder:
-            attention_mask = create_causal_mask(
+            #commenting out the below line because we need
+            #bidirectional mask for the decoder
+
+            # attention_mask = create_causal_mask(
+            #     config=self.config,
+            #     input_embeds=inputs_embeds,
+            #     attention_mask=attention_mask,
+            #     cache_position=cache_position,
+            #     past_key_values=past_key_values.self_attention_cache
+            #     if isinstance(past_key_values, EncoderDecoderCache)
+            #     else past_key_values,
+            # )
+            attention_mask = create_bidirectional_mask(
                 config=self.config,
                 input_embeds=inputs_embeds,
                 attention_mask=attention_mask,
-                cache_position=cache_position,
-                past_key_values=past_key_values.self_attention_cache
-                if isinstance(past_key_values, EncoderDecoderCache)
-                else past_key_values,
             )
         else:
            
