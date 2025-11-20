@@ -31,3 +31,4 @@ warmup_ratio: 0.0
 dataloader_num_workers: 1
 max_missing_prop: 0.9
 use_eos_token: true
+is_diff: false

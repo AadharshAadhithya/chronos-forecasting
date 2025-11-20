@@ -84,9 +84,9 @@ if __name__ == "__main__":
     hf_dataset_to_arrow(
         hf_repo="autogluon/chronos_datasets",
         hf_config="training_corpus_tsmixup_10m",
-        output_path="/scratch/10608/aadharsh_aadhithya/data/ts/cronos/chronos_training_corpus_400000.arrow",
+        output_path="/scratch/10608/aadharsh_aadhithya/data/ts/cronos/chronos_training_corpus.arrow",
         freq="D",
-        max_series=400000,  # set to None to convert all series
+        max_series=None,  # set to None to convert all series
         compression="lz4",
         streaming=False,
     )

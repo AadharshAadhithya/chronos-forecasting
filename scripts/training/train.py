@@ -43,9 +43,14 @@ from gluonts.transform import (
     LeavesMissingValues,
     LastValueImputation,
 )
+import os
+os.environ["WANDB_PROJECT"] = "chronos-forecasting"
+os.environ["WANDB_ENTITY"] = "aaa_2024"
+
 
 # Add src directory to path to allow importing chronos without installation
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from chronos import ChronosConfig, ChronosTokenizer
 
@@ -172,20 +177,28 @@ def load_model(
     of tokens.
     """
     assert model_type in ["seq2seq", "causal"]
-    AutoModelClass = (
-        AutoModelForSeq2SeqLM if model_type == "seq2seq" else AutoModelForCausalLM
-    )
+
+    if "t5" in model_id and model_type == "seq2seq":
+        from models.t5.modeling_t5 import T5ForConditionalGeneration as ModelClass
+    else:
+        ModelClass = (
+            AutoModelForSeq2SeqLM if model_type == "seq2seq" else AutoModelForCausalLM
+        )
+
     if random_init:
         log_on_main("Using random initialization", logger)
         config = AutoConfig.from_pretrained(model_id)
+      
         if isinstance(config, T5Config):
             # The default initializer_factor (1.0) in transformers is too large
             config.initializer_factor = 0.05
         config.tie_word_embeddings = tie_embeddings
-        model = AutoModelClass.from_config(config)
+        model = ModelClass._from_config(config)
     else:
         log_on_main(f"Using pretrained initialization from {model_id}", logger)
-        model = AutoModelClass.from_pretrained(model_id)
+        model = ModelClass.from_pretrained(model_id)
+
+        
 
     model.resize_token_embeddings(vocab_size)
 
@@ -541,6 +554,7 @@ def main(
     top_k: int = 50,
     top_p: float = 1.0,
     seed: Optional[int] = None,
+    is_diff: bool = False,
 ):
     if tf32 and not (
         torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8
@@ -616,15 +630,28 @@ def main(
 
     log_on_main("Initializing model", logger)
 
+    # For diffusion-style training, extend the base vocabulary by 1 and reserve
+    # the last token ID as a [MASK] token used only by the training objective.
+    effective_vocab_size = n_tokens + (1 if is_diff else 0)
+
     model = load_model(
         model_id=model_id,
         model_type=model_type,
-        vocab_size=n_tokens,
+        vocab_size=effective_vocab_size,
         random_init=random_init,
         tie_embeddings=tie_embeddings,
         pad_token_id=pad_token_id,
         eos_token_id=eos_token_id,
     )
+
+    mask_token_id = None
+    if is_diff:
+        # Patch the decoder to be bidirectional and record the mask token id.
+        # This assumes a T5-style seq2seq architecture.
+        from diff_train import DiffTrainer, make_t5_decoder_bidirectional
+        print("Patching model to be bidirectional")
+        make_t5_decoder_bidirectional(model)
+        mask_token_id = effective_vocab_size - 1
 
     chronos_config = ChronosConfig(
         tokenizer_class=tokenizer_class,
@@ -646,6 +673,7 @@ def main(
     # Add extra items to model config so that it's saved in the ckpt
     model.config.chronos_config = chronos_config.__dict__
 
+
     shuffled_train_dataset = ChronosDataset(
         datasets=train_datasets,
         probabilities=probability,
@@ -658,6 +686,7 @@ def main(
         mode="training",
     ).shuffle(shuffle_buffer_length=shuffle_buffer_length)
 
+    from datetime import datetime
     # Define training args
     training_args = TrainingArguments(
         output_dir=str(output_dir),
@@ -670,7 +699,8 @@ def main(
         logging_steps=log_steps,
         save_strategy="steps",
         save_steps=save_steps,
-        report_to=["tensorboard"],
+        report_to=["wandb"],
+        run_name=f"chronos-forecasting-{datetime.now().strftime('%Y%m%d_%H%M%S')}",
         max_steps=max_steps,
         gradient_accumulation_steps=gradient_accumulation_steps,
         dataloader_num_workers=dataloader_num_workers,
@@ -680,12 +710,24 @@ def main(
         remove_unused_columns=False,
     )
 
+   
+
     # Create Trainer instance
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=shuffled_train_dataset,
-    )
+    if is_diff:
+        # Custom diffusion-style trainer with denoising objective
+        trainer = DiffTrainer(
+            model=model,
+            args=training_args,
+            train_dataset=shuffled_train_dataset,
+            mask_token_id=mask_token_id,
+        )
+    else:
+        # Standard AR training pipeline
+        trainer = Trainer(
+            model=model,
+            args=training_args,
+            train_dataset=shuffled_train_dataset,
+        )
     log_on_main("Training", logger)
 
     trainer.train()
