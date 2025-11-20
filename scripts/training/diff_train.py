@@ -110,7 +110,7 @@ class DiffTrainer(Trainer):
 
         return noisy_batch, masked_indices, p_mask
 
-    def compute_loss(self, model, inputs, return_outputs: bool = False):
+    def compute_loss(self, model, inputs, return_outputs: bool = False, **kwargs):
         """
         Replace the standard language-modeling loss with the custom denoising loss.
 
@@ -140,9 +140,17 @@ class DiffTrainer(Trainer):
             input_ids=input_ids,
             mask_token_id=self.mask_token_id,
         )
-
-        outputs = model(input_ids=noisy_batch, attention_mask=attention_mask)
+        #Todo: Sending attention_mask to be None
+        #which means no padding tokens will be present 
+        # I am thinking we need attention_mask
+        #as ther emight be missing entries in time seires as opposed 
+        #rto text. Chronos datset puts pading and keeps do not attend
+        #if it sees missing entires
+        #aatn maps are used by doing and 
+        outputs = model(input_ids=noisy_batch, attention_mask=attention_mask, decoder_input_ids=noisy_batch)
         logits = outputs.logits  # (b, L, vocab)
+
+      
 
         # Move masks to the same device as logits
         masked_indices = masked_indices.to(logits.device)

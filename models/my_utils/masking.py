@@ -955,6 +955,7 @@ def create_bidirectional_mask(
         config=config,  # Pass the config as well, in case someone wants to easily have their own mask_interface
         use_vmap=use_vmap,  # Short-circuit to non-vmap expansions for the mask
     )
+    
     return attention_mask
 
 

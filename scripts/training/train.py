@@ -648,9 +648,9 @@ def main(
     if is_diff:
         # Patch the decoder to be bidirectional and record the mask token id.
         # This assumes a T5-style seq2seq architecture.
-        from diff_train import DiffTrainer, make_t5_decoder_bidirectional
+        model.decoder.decoder_bidirectional = True
+        from diff_train import DiffTrainer
         print("Patching model to be bidirectional")
-        make_t5_decoder_bidirectional(model)
         mask_token_id = effective_vocab_size - 1
 
     chronos_config = ChronosConfig(

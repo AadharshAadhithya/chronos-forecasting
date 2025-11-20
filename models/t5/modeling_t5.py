@@ -643,6 +643,7 @@ class T5Stack(T5PreTrainedModel):
 
         self.embed_tokens = nn.Embedding(config.vocab_size, config.d_model)
         self.is_decoder = config.is_decoder
+        self.decoder_bidirectional = False
 
         self.block = nn.ModuleList(
             [T5Block(config, has_relative_attention_bias=bool(i == 0), layer_idx=i) for i in range(config.num_layers)]
@@ -742,11 +743,24 @@ class T5Stack(T5PreTrainedModel):
             #     if isinstance(past_key_values, EncoderDecoderCache)
             #     else past_key_values,
             # )
-            attention_mask = create_bidirectional_mask(
-                config=self.config,
-                input_embeds=inputs_embeds,
-                attention_mask=attention_mask,
-            )
+            if self.decoder_bidirectional:
+                #print("Creating bidirectional mask")
+                attention_mask = create_bidirectional_mask(
+                    config=self.config,
+                    input_embeds=inputs_embeds,
+                    attention_mask=attention_mask,
+                )
+            else:
+                print("Creating causal mask")
+                attention_mask = create_causal_mask(
+                    config=self.config,
+                    input_embeds=inputs_embeds,
+                    attention_mask=attention_mask,
+                    cache_position=cache_position,
+                    past_key_values=past_key_values.self_attention_cache
+                    if isinstance(past_key_values, EncoderDecoderCache)
+                    else past_key_values,
+                )
         else:
            
             attention_mask = create_bidirectional_mask(
@@ -1032,6 +1046,12 @@ class T5ForConditionalGeneration(T5PreTrainedModel, GenerationMixin):
         self.shared = new_embeddings
         self.encoder.set_input_embeddings(new_embeddings)
         self.decoder.set_input_embeddings(new_embeddings)
+
+    def get_output_embeddings(self):
+        return self.lm_head
+
+    def set_output_embeddings(self, new_embeddings):
+        self.lm_head = new_embeddings
 
     @auto_docstring
     def forward(
